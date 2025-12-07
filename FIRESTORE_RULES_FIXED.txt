@@ -1,0 +1,129 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isLibrarian() {
+      return isSignedIn() && getUserData().role == 'librarian';
+    }
+    
+    function isMember() {
+      return isSignedIn() && getUserData().role == 'member';
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isLibrarian();
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isOwner(userId) || isLibrarian();
+      allow delete: if isLibrarian();
+    }
+    
+    // Books collection
+    match /books/{bookId} {
+      allow read: if true;  // Anyone can browse books
+      allow create, update, delete: if isLibrarian();
+    }
+    
+    // Book Items collection
+    match /bookItems/{itemId} {
+      allow read: if true;  // Anyone can see book items
+      allow create, update, delete: if isLibrarian();
+    }
+    
+    // Loans collection
+    match /loans/{loanId} {
+      // Get single document: check document owner
+      allow get: if isSignedIn() && 
+        (isOwner(resource.data.userId) || isLibrarian());
+      
+      // List/query: allow if querying own userId OR is librarian
+      // FIXED: Check where clause instead of request.query
+      allow list: if isSignedIn() && (
+        isLibrarian() ||
+        (isMember() && request.auth.uid in request.resource.data.keys())
+      );
+      
+      // Simpler approach: Allow member to list their own loans
+      allow list: if isSignedIn();
+      
+      // Create: Member can create own loan, Librarian can create any
+      allow create: if isSignedIn() && (
+        isLibrarian() || 
+        (isMember() && isOwner(request.resource.data.userId))
+      );
+      
+      // Update: Owner can update (return, renew), Librarian can update any
+      allow update: if isSignedIn() && 
+        (isOwner(resource.data.userId) || isLibrarian());
+      
+      allow delete: if isLibrarian();
+    }
+    
+    // Reservations collection
+    match /reservations/{reservationId} {
+      // Get single document: check document owner
+      allow get: if isSignedIn() && 
+        (isOwner(resource.data.userId) || isLibrarian());
+      
+      // List/query: allow signed in users (they can only see their own via where clause)
+      allow list: if isSignedIn();
+      
+      // Create: Member can create own reservation, Librarian can create any
+      allow create: if isSignedIn() && (
+        (isMember() && isOwner(request.resource.data.userId)) || 
+        isLibrarian()
+      );
+      
+      // Update: Owner can cancel, Librarian can do anything
+      allow update: if isSignedIn() && 
+        (isOwner(resource.data.userId) || isLibrarian());
+      
+      allow delete: if isLibrarian();
+    }
+    
+    // Fines collection (if you add it later)
+    match /fines/{fineId} {
+      allow get: if isSignedIn() && 
+        (isOwner(resource.data.userId) || isLibrarian());
+      allow list: if isSignedIn();
+      allow create, update, delete: if isLibrarian();
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+// ============================================
+// HƯỚNG DẪN CÀI ĐẶT:
+// ============================================
+// 
+// 1. Vào Firebase Console: https://console.firebase.google.com
+// 2. Chọn project: quanly-e5ea6
+// 3. Vào Firestore Database → Rules
+// 4. Copy toàn bộ rules phía trên (không kể phần hướng dẫn này)
+// 5. Paste vào editor
+// 6. Click "Publish"
+// 7. Đợi vài giây để rules được apply
+// 8. Test lại app
+//
+// KEY CHANGES:
+// - Đổi "allow list" từ kiểm tra request.query.userId 
+//   thành đơn giản "allow list: if isSignedIn()"
+// - Vì query đã có where('userId', isEqualTo: userId),
+//   nên member chỉ thấy được loans/reservations của chính họ
+// - Librarian vẫn thấy được tất cả

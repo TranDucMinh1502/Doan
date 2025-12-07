@@ -118,9 +118,137 @@ class _MyLoansScreenState extends State<MyLoansScreen> {
   Future<void> _handleRenew(Loan loan) async {
     // Check renew limit
     if (loan.renewCount >= 2) {
-      _showMessage('Maximum renewal limit (2) reached');
+      _showMessage('Đã đạt giới hạn gia hạn tối đa (2 lần)');
       return;
     }
+
+    // Calculate new due date
+    final currentDueDate = loan.dueDate.toDate();
+    final newDueDate = currentDueDate.add(const Duration(days: 15));
+    final remainingRenewals = 2 - loan.renewCount - 1;
+
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.update, color: Colors.blue[700]),
+            const SizedBox(width: 8),
+            const Text('Gia hạn sách'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Bạn muốn gia hạn thêm 15 ngày?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 16,
+                          color: Colors.blue[700],
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Thông tin gia hạn:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoRow(
+                      'Hạn trả hiện tại:',
+                      _formatDate(currentDueDate),
+                      Icons.event,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildInfoRow(
+                      'Hạn trả mới:',
+                      _formatDate(newDueDate),
+                      Icons.event_available,
+                      highlight: true,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildInfoRow(
+                      'Số lần gia hạn đã dùng:',
+                      '${loan.renewCount} / 2',
+                      Icons.repeat,
+                    ),
+                    const SizedBox(height: 8),
+                    _buildInfoRow(
+                      'Còn lại sau khi gia hạn:',
+                      '$remainingRenewals lần',
+                      Icons.info_outline,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber,
+                      color: Colors.orange[700],
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        remainingRenewals == 0
+                            ? 'Đây là lần gia hạn cuối cùng của bạn.'
+                            : 'Bạn còn $remainingRenewals lần gia hạn sau này.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange[900],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Hủy'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.check),
+            label: const Text('Xác nhận gia hạn'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
 
     setState(() => _processingLoanId = loan.id);
 
@@ -128,18 +256,78 @@ class _MyLoansScreenState extends State<MyLoansScreen> {
       await _loanService.renewLoan(loan.id);
 
       if (mounted) {
-        _showMessage('Loan renewed successfully!');
+        _showMessage('Gia hạn thành công! Hạn mới: ${_formatDate(newDueDate)}');
         _loadLoans(); // Reload loans
       }
     } catch (e) {
       if (mounted) {
-        _showMessage('Error: ${e.toString()}');
+        String errorMsg = e.toString();
+        if (errorMsg.contains('Maximum renewal limit')) {
+          _showMessage('Đã đạt giới hạn gia hạn tối đa');
+        } else if (errorMsg.contains('permission') ||
+            errorMsg.contains('PERMISSION_DENIED')) {
+          _showMessage(
+            'Lỗi quyền truy cập. Vui lòng kiểm tra Firestore rules.',
+          );
+        } else {
+          _showMessage('Lỗi: $errorMsg');
+        }
       }
     } finally {
       if (mounted) {
         setState(() => _processingLoanId = null);
       }
     }
+  }
+
+  Widget _buildInfoRow(
+    String label,
+    String value,
+    IconData icon, {
+    bool highlight = false,
+  }) {
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 14,
+          color: highlight ? Colors.green[700] : Colors.grey[600],
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: highlight ? FontWeight.bold : FontWeight.w600,
+            color: highlight ? Colors.green[700] : Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final months = [
+      'Th1',
+      'Th2',
+      'Th3',
+      'Th4',
+      'Th5',
+      'Th6',
+      'Th7',
+      'Th8',
+      'Th9',
+      'Th10',
+      'Th11',
+      'Th12',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   void _showMessage(String message) {
@@ -343,15 +531,69 @@ class _MyLoansScreenState extends State<MyLoansScreen> {
             const SizedBox(height: 8),
             _buildDaysIndicator(loan),
 
-            // Renew count
-            if (loan.renewCount > 0) ...[
-              const SizedBox(height: 8),
-              _buildDetailRow(
-                Icons.refresh,
-                'Renewals',
-                '${loan.renewCount} / 2',
-              ),
-            ],
+            // Renew count and remaining renewals
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.repeat, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Số lần gia hạn',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: loan.renewCount >= 2
+                        ? Colors.red[50]
+                        : loan.renewCount > 0
+                        ? Colors.orange[50]
+                        : Colors.green[50],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: loan.renewCount >= 2
+                          ? Colors.red
+                          : loan.renewCount > 0
+                          ? Colors.orange
+                          : Colors.green,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${loan.renewCount} / 2',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: loan.renewCount >= 2
+                              ? Colors.red[700]
+                              : loan.renewCount > 0
+                              ? Colors.orange[700]
+                              : Colors.green[700],
+                        ),
+                      ),
+                      if (loan.renewCount < 2) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '(Còn ${2 - loan.renewCount})',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
 
             // Fine (if overdue)
             if (loan.hasFine) ...[
@@ -499,24 +741,6 @@ class _MyLoansScreenState extends State<MyLoansScreen> {
         ],
       ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }
 

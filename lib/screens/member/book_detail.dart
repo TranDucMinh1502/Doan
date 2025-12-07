@@ -74,114 +74,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
-  Future<void> _handleCheckoutBookItem(BookItem item) async {
-    if (_currentUser == null || _book == null) {
-      _showMessage('Vui lòng đợi, đang tải thông tin...', isSuccess: false);
-      // Try to reload user data
-      try {
-        final user = await _authService.getCurrentUserProfile();
-        if (user != null) {
-          setState(() {
-            _currentUser = user;
-          });
-          // Retry checkout after loading user
-          _handleCheckoutBookItem(item);
-        } else {
-          _showMessage(
-            'Lỗi: Không tải được thông tin người dùng',
-            isSuccess: false,
-          );
-        }
-      } catch (e) {
-        _showMessage('Lỗi: ${e.toString()}', isSuccess: false);
-      }
-      return;
-    }
-
-    // Check if user can borrow more books
-    if (!_currentUser!.canBorrowMore) {
-      _showMessage('Bạn đã đạt giới hạn mượn sách', isSuccess: false);
-      return;
-    }
-
-    // Show confirmation dialog
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Checkout Book'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Do you want to borrow this book?'),
-            const SizedBox(height: 12),
-            Text(
-              'Barcode: ${item.barcode}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            Text('Location: ${item.location}'),
-            Text('Condition: ${item.condition}'),
-            const SizedBox(height: 12),
-            Text(
-              'Due date: 15 days from now',
-              style: TextStyle(color: Colors.grey[700], fontSize: 13),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    setState(() => _isProcessing = true);
-
-    try {
-      await _loanService.issueBook(
-        userId: _currentUser!.uid,
-        itemId: item.id,
-        bookId: _book!.id,
-      );
-
-      if (mounted) {
-        _showMessage('Mượn sách thành công!', isSuccess: true);
-        _loadData(); // Reload data to update available copies
-      }
-    } on Exception catch (e) {
-      if (mounted) {
-        String errorMsg = e.toString();
-        // Check for permission error
-        if (errorMsg.contains('permission') ||
-            errorMsg.contains('PERMISSION_DENIED')) {
-          _showMessage(
-            'Lỗi quyền truy cập. Vui lòng kiểm tra Firestore rules.',
-            isSuccess: false,
-          );
-        } else {
-          _showMessage('Lỗi: $errorMsg', isSuccess: false);
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        _showMessage('Lỗi không xác định: ${e.toString()}', isSuccess: false);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
-    }
-  }
-
   Future<void> _handleBorrow() async {
     if (_currentUser == null || _book == null || _availableItems.isEmpty) {
       return;
@@ -387,10 +279,15 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '• Sách hiện không có sẵn\n'
-                      '• Bạn sẽ vào hàng đợi\n'
-                      '• Thông báo khi sách có sẵn\n'
-                      '• Có 3 ngày để mượn khi được thông báo',
+                      _book != null && _book!.availableCopies > 0
+                          ? '• Đặt giữ để đảm bảo có sách khi cần\n'
+                                '• Bạn có thể mượn ngay hoặc để sau\n'
+                                '• Được ưu tiên khi có người trả sách\n'
+                                '• Có 3 ngày để mượn khi được thông báo'
+                          : '• Sách hiện không có sẵn\n'
+                                '• Bạn sẽ vào hàng đợi\n'
+                                '• Thông báo khi sách có sẵn\n'
+                                '• Có 3 ngày để mượn khi được thông báo',
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.orange[900],
@@ -691,10 +588,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   Widget _buildBookItemTile(BookItem item) {
     final isAvailable = item.status.toLowerCase() == 'available';
     final isBorrowed = item.status.toLowerCase() == 'borrowed';
-    final showCheckoutButton =
-        (_currentUser == null ||
-            (_currentUser != null && !_currentUser!.isLibrarian)) &&
-        isAvailable;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -806,62 +699,6 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                 ],
               ),
             ),
-
-            // Checkout button (only for available items)
-            if (showCheckoutButton) ...[
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: _isProcessing
-                    ? null
-                    : () => _handleCheckoutBookItem(item),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: _isProcessing
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        'Mượn',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-              ),
-            ] else if (!isAvailable && !_currentUser!.isLibrarian) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'Không khả dụng',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -905,8 +742,51 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               ),
             ),
           ] else if (_currentUser != null && _currentUser!.isMember) ...[
-            // Member buttons
-            if (_availableItems.isNotEmpty)
+            // Member buttons - Show both Borrow and Reserve when available
+            if (_book != null && _book!.availableCopies > 0) ...[
+              // Info box explaining the options
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Bạn có 2 lựa chọn:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[900],
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '• Mượn ngay: Nhận sách và trả trong 15 ngày\n'
+                            '• Đặt giữ: Để mượn sau, được ưu tiên khi có người trả',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue[900],
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Borrow button
               ElevatedButton.icon(
                 onPressed: _isProcessing ? null : _handleBorrow,
                 icon: _isProcessing
@@ -919,13 +799,26 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ),
                       )
                     : const Icon(Icons.check),
-                label: Text(_isProcessing ? 'Processing...' : 'Borrow'),
+                label: Text(_isProcessing ? 'Đang xử lý...' : 'Mượn ngay'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   backgroundColor: Colors.green,
                 ),
-              )
-            else
+              ),
+              const SizedBox(height: 12),
+              // Reserve button (also available when book is available)
+              OutlinedButton.icon(
+                onPressed: _isProcessing ? null : _handleReserve,
+                icon: const Icon(Icons.bookmark_add),
+                label: const Text('Đặt giữ để mượn sau'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  foregroundColor: Colors.orange,
+                  side: const BorderSide(color: Colors.orange, width: 2),
+                ),
+              ),
+            ] else if (_book != null) ...[
+              // Only reserve button when no copies available
               ElevatedButton.icon(
                 onPressed: _isProcessing ? null : _handleReserve,
                 icon: _isProcessing
@@ -938,12 +831,13 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                         ),
                       )
                     : const Icon(Icons.bookmark_add),
-                label: Text(_isProcessing ? 'Processing...' : 'Reserve'),
+                label: Text(_isProcessing ? 'Đang xử lý...' : 'Đặt giữ'),
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   backgroundColor: Colors.orange,
                 ),
               ),
+            ],
           ] else
             Text(
               'Please sign in to borrow or reserve books',

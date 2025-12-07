@@ -560,7 +560,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 title: const Text('Member ID'),
                 subtitle: Text(userData?['cardNumber'] ?? 'N/A'),
               ),
+
+              // Borrowing stats
               const Divider(height: 32),
+              const Text(
+                'Borrowing Statistics',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      _buildStatRow(
+                        'Books Currently Borrowed',
+                        '${userData?['borrowedCount'] ?? 0}',
+                        Icons.book,
+                        Colors.blue,
+                      ),
+                      const Divider(height: 24),
+                      _buildStatRow(
+                        'Maximum Borrow Limit',
+                        '${userData?['maxBorrow'] ?? 3}',
+                        Icons.library_books,
+                        Colors.green,
+                      ),
+                      const Divider(height: 24),
+                      _buildStatRow(
+                        'Available Slots',
+                        '${(userData?['maxBorrow'] ?? 3) - (userData?['borrowedCount'] ?? 0)}',
+                        Icons.check_circle,
+                        Colors.orange,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Actions
+              const Divider(height: 32),
+
+              // Change Password Button
+              OutlinedButton.icon(
+                onPressed: () => _showChangePasswordDialog(),
+                icon: const Icon(Icons.lock),
+                label: const Text('Change Password'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Cancel Membership Button
+              OutlinedButton.icon(
+                onPressed: () => _showCancelMembershipDialog(userData),
+                icon: const Icon(Icons.cancel),
+                label: const Text('Cancel Membership'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.orange,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Sign Out Button
               ElevatedButton.icon(
                 onPressed: () => _handleSignOut(context),
                 icon: const Icon(Icons.logout),
@@ -568,6 +632,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
             ],
@@ -575,5 +640,282 @@ class _ProfileScreenState extends State<ProfileScreen> {
         },
       ),
     );
+  }
+
+  Widget _buildStatRow(String label, String value, IconData icon, Color color) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: color, size: 24),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showChangePasswordDialog() async {
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Change Password'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: currentPasswordController,
+                decoration: const InputDecoration(
+                  labelText: 'Current Password',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+                obscureText: true,
+                validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: newPasswordController,
+                decoration: const InputDecoration(
+                  labelText: 'New Password',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock),
+                ),
+                obscureText: true,
+                validator: (v) {
+                  if (v?.isEmpty ?? true) return 'Required';
+                  if (v!.length < 6) return 'Min 6 characters';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: confirmPasswordController,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm New Password',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock_clock),
+                ),
+                obscureText: true,
+                validator: (v) {
+                  if (v?.isEmpty ?? true) return 'Required';
+                  if (v != newPasswordController.text) {
+                    return 'Passwords do not match';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!formKey.currentState!.validate()) return;
+
+              try {
+                final user = FirebaseAuth.instance.currentUser!;
+                final credential = EmailAuthProvider.credential(
+                  email: user.email!,
+                  password: currentPasswordController.text,
+                );
+
+                await user.reauthenticateWithCredential(credential);
+                await user.updatePassword(newPasswordController.text);
+
+                if (context.mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Password changed successfully'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Change Password'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCancelMembershipDialog(
+    Map<String, dynamic>? userData,
+  ) async {
+    final borrowedCount = userData?['borrowedCount'] as int? ?? 0;
+
+    if (borrowedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please return all books before cancelling membership'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Cancel Membership'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Are you sure you want to cancel your membership?',
+              style: TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.red[700],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'This action will:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('• Cancel your library membership'),
+                  const Text('• Remove access to all library services'),
+                  const Text('• Cannot be undone'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Membership'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Confirm Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _cancelMembership();
+    }
+  }
+
+  Future<void> _cancelMembership() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser!;
+
+      // Update user role to cancelled
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'role': 'cancelled',
+            'maxBorrow': 0,
+            'cancelledAt': FieldValue.serverTimestamp(),
+          });
+
+      // Cancel all active reservations
+      final reservationsSnapshot = await FirebaseFirestore.instance
+          .collection('reservations')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', whereIn: ['waiting', 'notified'])
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in reservationsSnapshot.docs) {
+        batch.update(doc.reference, {'status': 'canceled'});
+      }
+      await batch.commit();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Membership cancelled successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Sign out and redirect to login
+        await Future.delayed(const Duration(seconds: 1));
+        await FirebaseAuth.instance.signOut();
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 }
