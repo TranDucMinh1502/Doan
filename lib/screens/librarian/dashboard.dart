@@ -9,6 +9,7 @@ import 'manage_books.dart';
 import 'manage_members.dart';
 import 'loans_returns.dart';
 import 'reservations.dart';
+import 'fines_management.dart';
 import '../auth/login_screen.dart';
 
 /// Dashboard screen for librarians showing library statistics and management options.
@@ -41,6 +42,8 @@ class _LibrarianDashboardState extends State<LibrarianDashboard> {
         case 4:
           return const ReservationsScreen();
         case 5:
+          return const FinesManagementScreen();
+        case 6:
           return const LibrarianProfileScreen();
         default:
           return const _DashboardHome();
@@ -59,8 +62,8 @@ class _LibrarianDashboardState extends State<LibrarianDashboard> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.grey,
-        selectedFontSize: 12,
-        unselectedFontSize: 11,
+        selectedFontSize: 11,
+        unselectedFontSize: 10,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.dashboard),
@@ -74,8 +77,9 @@ class _LibrarianDashboardState extends State<LibrarianDashboard> {
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.bookmark_border),
-            label: 'Reservations',
+            label: 'Reserve',
           ),
+          BottomNavigationBarItem(icon: Icon(Icons.payment), label: 'Fines'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
@@ -707,6 +711,19 @@ class _LibrarianProfileScreenState extends State<LibrarianProfileScreen> {
                 subtitle: Text(userData?['cardNumber'] ?? 'N/A'),
               ),
               const Divider(height: 32),
+              // Change Password Button
+              ElevatedButton.icon(
+                onPressed: _showChangePasswordDialog,
+                icon: const Icon(Icons.lock),
+                label: const Text('Change Password'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Sign Out Button
               ElevatedButton.icon(
                 onPressed: () => _handleSignOut(context),
                 icon: const Icon(Icons.logout),
@@ -714,11 +731,168 @@ class _LibrarianProfileScreenState extends State<LibrarianProfileScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _showChangePasswordDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool isProcessing = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.lock, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Change Password'),
+            ],
+          ),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: currentPasswordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Current Password',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                  obscureText: true,
+                  validator: (v) => v?.isEmpty ?? true
+                      ? 'Please enter current password'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: newPasswordController,
+                  decoration: const InputDecoration(
+                    labelText: 'New Password',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock),
+                  ),
+                  obscureText: true,
+                  validator: (v) {
+                    if (v?.isEmpty ?? true) return 'Please enter new password';
+                    if (v!.length < 6)
+                      return 'Password must be at least 6 characters';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: confirmPasswordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm New Password',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock),
+                  ),
+                  obscureText: true,
+                  validator: (v) {
+                    if (v?.isEmpty ?? true) return 'Please confirm password';
+                    if (v != newPasswordController.text) {
+                      return 'Passwords do not match';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isProcessing ? null : () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: isProcessing
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+
+                      setDialogState(() => isProcessing = true);
+
+                      try {
+                        final user = FirebaseAuth.instance.currentUser;
+                        if (user == null) throw Exception('No user logged in');
+
+                        // Reauthenticate
+                        final credential = EmailAuthProvider.credential(
+                          email: user.email!,
+                          password: currentPasswordController.text,
+                        );
+
+                        await user.reauthenticateWithCredential(credential);
+
+                        // Change password
+                        await user.updatePassword(newPasswordController.text);
+
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Password changed successfully!'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } on FirebaseAuthException catch (e) {
+                        String errorMsg = 'Error changing password';
+                        if (e.code == 'wrong-password') {
+                          errorMsg = 'Current password is incorrect';
+                        } else if (e.code == 'weak-password') {
+                          errorMsg = 'New password is too weak';
+                        }
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(errorMsg),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } finally {
+                        if (context.mounted) {
+                          setDialogState(() => isProcessing = false);
+                        }
+                      }
+                    },
+              child: isProcessing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Change Password'),
+            ),
+          ],
+        ),
       ),
     );
   }

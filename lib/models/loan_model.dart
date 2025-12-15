@@ -43,10 +43,16 @@ class Loan {
   /// Number of times this loan has been renewed
   final int renewCount;
 
+  /// Whether the fine has been paid
+  final bool finePaid;
+
+  /// Date and time when the fine was paid
+  final Timestamp? finePaidAt;
+
   /// Creates a new [Loan] instance.
   ///
-  /// All parameters except [returnDate] are required.
-  /// [returnDate] is nullable as it's only set when the book is returned.
+  /// All parameters except [returnDate], [finePaidAt] are required.
+  /// [returnDate] and [finePaidAt] are nullable.
   Loan({
     required this.id,
     required this.userId,
@@ -58,6 +64,8 @@ class Loan {
     required this.status,
     required this.fine,
     required this.renewCount,
+    this.finePaid = false,
+    this.finePaidAt,
   });
 
   /// Creates a [Loan] instance from a Firestore document.
@@ -87,6 +95,8 @@ class Loan {
       status: data['status'] as String? ?? 'borrowed',
       fine: (data['fine'] as num?)?.toDouble() ?? 0.0,
       renewCount: data['renewCount'] as int? ?? 0,
+      finePaid: data['finePaid'] as bool? ?? false,
+      finePaidAt: data['finePaidAt'] as Timestamp?,
     );
   }
 
@@ -108,6 +118,8 @@ class Loan {
       'status': status,
       'fine': fine,
       'renewCount': renewCount,
+      'finePaid': finePaid,
+      'finePaidAt': finePaidAt,
     };
   }
 
@@ -125,6 +137,8 @@ class Loan {
     String? status,
     double? fine,
     int? renewCount,
+    bool? finePaid,
+    Timestamp? finePaidAt,
   }) {
     return Loan(
       id: id ?? this.id,
@@ -137,6 +151,8 @@ class Loan {
       status: status ?? this.status,
       fine: fine ?? this.fine,
       renewCount: renewCount ?? this.renewCount,
+      finePaid: finePaid ?? this.finePaid,
+      finePaidAt: finePaidAt ?? this.finePaidAt,
     );
   }
 
